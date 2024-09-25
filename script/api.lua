@@ -6,18 +6,18 @@ local IMAGE_SUICIDE = "suicide.png"
 local IMAGE_WIELDHAND = "wieldhand.png"
 local IMAGE_SPI = "spi.png"
 
+local connected_players = minetest.get_connected_players
+
 local function validate_player(player)
-    if not player or not player:is_player() then
-        minetest.log("error", "Invalid player object.")
-        return false
+    if player and player:is_player() then
+        return true
     end
-    return true
+    minetest.log("error", "Invalid player object.")
+    return false
 end
 
 local function add_hud(player, type, position, text, scale, alignment, direction, offset)
-    if not validate_player(player) then return nil end
-
-    if not type or not position or not text then
+    if not validate_player(player) or not type or not position or not text then
         minetest.log("error", "Missing essential HUD parameters.")
         return nil
     end
@@ -36,9 +36,11 @@ end
 
 local function update_hud_positions(player)
     local hud_ids = atl_server_kill_history.hud_ids[player] or {}
+    local base_y = HUD_BASE_Y
+    local spacing = HUD_SPACING
 
     for i, hud in ipairs(hud_ids) do
-        local pos_y = HUD_BASE_Y + (i - 1) * HUD_SPACING
+        local pos_y = base_y + (i - 1) * spacing
 
         local function change_position_and_offset(hud_element, pos_x, offset_x, pos_y_adjust)
             if hud_element then
@@ -80,7 +82,8 @@ local function remove_oldest_hud(player)
 end
 
 local function broadcast_hud_entry(killer, item_image, killed_text)
-    for _, player in ipairs(minetest.get_connected_players()) do
+    local players = connected_players()
+    for _, player in ipairs(players) do
         atl_server_kill_history.hud_ids[player] = atl_server_kill_history.hud_ids[player] or {}
 
         while #atl_server_kill_history.hud_ids[player] >= MAX_HUDS do
@@ -91,6 +94,18 @@ local function broadcast_hud_entry(killer, item_image, killed_text)
     end
 end
 
+local texture_mapping = {
+    ["default:water_source"] = "default_water.png",
+    ["default:river_water_source"] = "default_river_water.png",
+    ["default:lava_source"] = "default_lava.png",
+    ["fire:permanent_flame"] = "fire_basic_flame.png",
+    ["fire:basic_flame"] = "fire_basic_flame.png"
+}
+
+local function get_node_texture(node_name)
+    return texture_mapping[node_name] or (minetest.registered_nodes[node_name] and minetest.registered_nodes[node_name].tiles and minetest.registered_nodes[node_name].tiles[1]) or ""
+end
+
 local function get_kill_details(player, reason)
     local player_name = player:get_player_name()
 
@@ -98,15 +113,15 @@ local function get_kill_details(player, reason)
         local attacker = reason.object
         if attacker and attacker:is_player() then
             local attacker_name = attacker:get_player_name()
-            local wielded_item = attacker:get_wielded_item()
-            local item_image = IMAGE_WIELDHAND
+            local wielded_item = attacker:get_wielded_item():get_name()
 
-            if wielded_item:get_name() ~= "" then
-                local item_def = minetest.registered_items[wielded_item:get_name()]
-                if item_def then
-                    item_image = item_def.tiles and type(item_def.tiles) == "table" and item_def.tiles[1] or item_def.inventory_image or IMAGE_WIELDHAND
-                end
-            end
+            local item_image = texture_mapping[wielded_item]
+                or (minetest.registered_items[wielded_item]
+                    and minetest.registered_items[wielded_item].tiles
+                    and minetest.registered_items[wielded_item].tiles[1]
+                    or minetest.registered_items[wielded_item].inventory_image
+                    or IMAGE_WIELDHAND)
+                or IMAGE_WIELDHAND
 
             return attacker_name, item_image, player_name
         elseif attacker and attacker:get_luaentity() and attacker:get_luaentity().name == "spiradilus:spiradilus" then
@@ -117,24 +132,13 @@ local function get_kill_details(player, reason)
     elseif reason and reason.type == "drown" then
         return nil, "bubble.png", player_name .. " (Drowned)"
     end
+
     return nil, IMAGE_SUICIDE, player_name .. " (Suicide)"
 end
 
 local function is_dangerous_node(node_name)
     local node_def = minetest.registered_nodes[node_name]
     return node_def and node_def.damage_per_second ~= nil
-end
-
-local function get_node_texture(node_name)
-    local texture_mapping = {
-        ["default:water_source"] = "default_water.png",
-        ["default:river_water_source"] = "default_river_water.png",
-        ["default:lava_source"] = "default_lava.png",
-        ["fire:permanent_flame"] = "fire_basic_flame.png",
-        ["fire:basic_flame"] = "fire_basic_flame.png"
-    }
-
-    return texture_mapping[node_name] or (minetest.registered_nodes[node_name] and minetest.registered_nodes[node_name].tiles and minetest.registered_nodes[node_name].tiles[1]) or ""
 end
 
 function atl_server_kill_history.handle_death(player, reason)
@@ -149,16 +153,12 @@ function atl_server_kill_history.handle_death(player, reason)
     else
         local player_name = player:get_player_name()
         local pos = player:get_pos()
-        local node = minetest.get_node(pos)
-        local node_name = node.name
+        local node_name = minetest.get_node(pos).name
 
-        if node_name == "air" then
+        if node_name == "air" or not is_dangerous_node(node_name) then
             broadcast_hud_entry(nil, IMAGE_SUICIDE, player_name .. " (Suicide)")
-        elseif is_dangerous_node(node_name) then
-            local node_texture = get_node_texture(node_name)
-            broadcast_hud_entry(nil, node_texture, player_name .. " (Suicide)")
         else
-            broadcast_hud_entry(nil, IMAGE_SUICIDE, player_name .. " (Suicide)")
+            broadcast_hud_entry(nil, get_node_texture(node_name), player_name .. " (Suicide)")
         end
     end
 end
