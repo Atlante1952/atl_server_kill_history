@@ -37,10 +37,9 @@ end
 local function update_hud_positions(player)
     local hud_ids = atl_server_kill_history.hud_ids[player] or {}
     local base_y = HUD_BASE_Y
-    local spacing = HUD_SPACING
 
     for i, hud in ipairs(hud_ids) do
-        local pos_y = base_y + (i - 1) * spacing
+        local pos_y = base_y + (i - 1) * HUD_SPACING
 
         local function change_position_and_offset(hud_element, pos_x, offset_x, pos_y_adjust)
             if hud_element then
