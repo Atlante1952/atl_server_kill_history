@@ -114,13 +114,18 @@ local function get_kill_details(player, reason)
             local attacker_name = attacker:get_player_name()
             local wielded_item = attacker:get_wielded_item():get_name()
 
+            local item_def = minetest.registered_items[wielded_item]
+
             local item_image = texture_mapping[wielded_item]
-                or (minetest.registered_items[wielded_item]
-                    and minetest.registered_items[wielded_item].tiles
-                    and minetest.registered_items[wielded_item].tiles[1]
-                    or minetest.registered_items[wielded_item].inventory_image
-                    or IMAGE_WIELDHAND)
-                or IMAGE_WIELDHAND
+
+            if not item_image and item_def then
+                if item_def.inventory_image and item_def.inventory_image ~= "" then
+                    item_image = item_def.inventory_image
+                elseif item_def.tiles and item_def.tiles[1] then
+                    item_image = item_def.tiles[1]
+                end
+            end
+            item_image = item_image or IMAGE_WIELDHAND
 
             return attacker_name, item_image, player_name
         elseif attacker and attacker:get_luaentity() and attacker:get_luaentity().name == "spiradilus:spiradilus" then
@@ -134,6 +139,8 @@ local function get_kill_details(player, reason)
 
     return nil, IMAGE_SUICIDE, player_name .. " (Suicide)"
 end
+
+
 
 local function is_dangerous_node(node_name)
     local node_def = minetest.registered_nodes[node_name]
